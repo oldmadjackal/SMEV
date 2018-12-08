@@ -967,7 +967,7 @@
        char *c ;
        long  content_cnt ;
        long  ip_cnt ;
-       char  text[128] ;
+       char  text[1024] ;
 
 #define   _FRAME_SIZE  256000
 
@@ -1071,16 +1071,12 @@
 
          for(c=ip ; *c ; c++) if(*c==',')  *c='.' ;
 
-                 strcat(record, ip) ;
-                 strcat(record, ";") ;
+           sprintf(text, "%s%s\n", record, ip) ;
+            fwrite(text, 1, strlen(text), csv_file) ;
 
                      *end=' ' ;
                    ip_cnt++ ; 
               }
-
-                 strcat(record, "\n") ;
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - Запись CSV */
-            fwrite(record, 1, strlen(record), csv_file) ;
 /*- - - - - - - - - - - - - - - - - - - - - - - - -  Обработка кадра */
                                                     }
 
