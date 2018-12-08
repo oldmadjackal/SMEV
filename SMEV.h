@@ -28,7 +28,7 @@
 
 #define   _PROGRAM_TITLE   "SMEV"
 
-#define   _VERSION   "21.11.2018"
+#define   _VERSION   "07.12.2018"
 #define   _WINDOW_TITLE       "Обмен с сервисами SMEV"
 
 /*--------------------------------------------------- Система команд */
@@ -78,6 +78,8 @@
 
   _EXTERNAL     char  __cookie_path[FILENAME_MAX] ;      /* Путь к файлу сохранения состояния */
   _EXTERNAL     char  __result_path[FILENAME_MAX] ;      /* Путь к файлу результата */
+
+  _EXTERNAL     char  __unzip_command[1024] ;            /* Команда распаковки файла данных */
 
 /*--------------------------------------------------- Фоновые потоки */
 

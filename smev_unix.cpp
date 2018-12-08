@@ -46,17 +46,6 @@
 /*       101  -  ошибка при обмене с сервисом                        */
 /*       102  -  последняя версия данных от сервиса уже получена     */
 
-int cmp_int(const void * p1, const void * p2) {
-    int s1 = *(int*)p1; int s2 = *(int*)p2;
-    if ((s1 % 2 == 0) && (s2 % 2 == 0)) {
-      if (s1 < s2) return -1;
-      else if (s1 > s2) return 1;
-    }
-    
-    if(p1>p2) return  1;
-              return -1;
-}
-
 int main(int argc, char **argv)
 {
            char  cmd_line[2048] ;
@@ -68,7 +57,7 @@ int main(int argc, char **argv)
 
 /*---------------------------------------------------- Инициализация */
 
-            printf("SMEV tools, version 20.10.2018\n") ;
+            printf("SMEV tools, version 07.12.2018\n") ;
 
 /*------------------------------------------ Разбор командной строки */
 
@@ -335,15 +324,16 @@ int main(int argc, char **argv)
                   char  type ;
                    int  size ;
                 }  pars[]={
-                           { "$ROOT$="          ,    root_path,        'C', sizeof(         root_path) },
-                           { "Log_path="        ,   __log_path,        'C', sizeof(        __log_path) },
-                           { "Service_name="    ,  __SMEV_name,        'C', sizeof(       __SMEV_name) },
-                           { "Service_url="     ,  __SMEV_url,         'C', sizeof(       __SMEV_url ) },
-                           { "Crypto_sign_in="  ,  __crypto_sign_in,   'C', sizeof(__crypto_sign_in  ) },
-                           { "Crypto_sign_out=" ,  __crypto_sign_out,  'C', sizeof(__crypto_sign_out ) },
-                           { "Crypto_sign_exec=",  __crypto_sign_exec, 'C', sizeof(__crypto_sign_exec) },
-                           { "Cookie_path="     ,  __cookie_path,      'C', sizeof(     __cookie_path) },
-                           { "Result_path="     ,  __result_path,      'C', sizeof(     __result_path) },
+                           { "$ROOT$="          ,    root_path,        'C', sizeof(         root_path   ) },
+                           { "Log_path="        ,   __log_path,        'C', sizeof(        __log_path   ) },
+                           { "Service_name="    ,  __SMEV_name,        'C', sizeof(       __SMEV_name   ) },
+                           { "Service_url="     ,  __SMEV_url,         'C', sizeof(       __SMEV_url    ) },
+                           { "Crypto_sign_in="  ,  __crypto_sign_in,   'C', sizeof(__crypto_sign_in     ) },
+                           { "Crypto_sign_out=" ,  __crypto_sign_out,  'C', sizeof(__crypto_sign_out    ) },
+                           { "Crypto_sign_exec=",  __crypto_sign_exec, 'C', sizeof(__crypto_sign_exec   ) },
+                           { "Cookie_path="     ,  __cookie_path,      'C', sizeof(     __cookie_path   ) },
+                           { "Result_path="     ,  __result_path,      'C', sizeof(     __result_path   ) },
+                           { "Unzip="           ,  __unzip_command,    'C', sizeof(      __unzip_command) },
                            {  NULL }
                           } ;
 
@@ -658,8 +648,28 @@ int main(int argc, char **argv)
   char *entry ;
   char *end ;
 
-/*--------------------------------------------- Запись данных в файл */
+/*------------------------------ Если фиксированный запрос и подпись */
 
+   if(__crypto_sign_exec[0]==0) {
+/*- - - - - - - - - - - - - - - - - - - - -  Чтение запроса из файла */
+         file=fopen(__crypto_sign_in, "rb") ;
+      if(file==NULL) {
+                          sprintf(text, "ERROR -- Signer input file open error %d : %s", errno, __crypto_sign_in) ;
+                        SMEV_show(text) ;
+                         SMEV_log(text) ;
+                            return(-1) ;
+                     }
+
+         cnt=fread(data, 1, 5000, file) ;
+                   data[cnt]=0 ;
+    
+            fclose(file) ;
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+                                }
+/*----------------------------------- Если динамическое подписывание */
+
+   else                         {
+/*- - - - - - - - - - - - - - - - - - - - - - - Запись данных в файл */
          file=fopen(__crypto_sign_in, "wb") ;
       if(file==NULL) {
                           sprintf(text, "ERROR -- Signer input file open error %d : %s", errno, __crypto_sign_in) ;
@@ -677,8 +687,7 @@ int main(int argc, char **argv)
                               SMEV_log(text) ;
                                  return(-1) ;
                             }
-/*------------------------------------------- Удаление файла подписи */
-
+/*- - - - - - - - - - - - - - - - - - - - - - Удаление файла подписи */
          cnt=unlink(__crypto_sign_out) ;
       if(cnt==-1 && errno!=ENOENT) {
                     sprintf(text, "ERROR -- Signer output file unlink error %d : %s", errno, __crypto_sign_out) ;
@@ -686,8 +695,7 @@ int main(int argc, char **argv)
                    SMEV_log(text) ;
                       return(-1) ;
                                    }
-/*-------------------------------------------- Вызов утилиты подписи */
-
+/*- - - - - - - - - - - - - - - - - - - - - -  Вызов утилиты подписи */
          cnt=system(__crypto_sign_exec) ;
       if(cnt!=0) {
                     sprintf(text, "ERROR -- Signer execute fail: return %d, error %d : %s", cnt, errno, __crypto_sign_exec) ;
@@ -695,6 +703,8 @@ int main(int argc, char **argv)
                    SMEV_log(text) ;
                       return(-1) ;
                  }
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -*/
+                                }
 /*------------------------------------------ Чтение подписи из файла */
 
          file=fopen(__crypto_sign_out, "rb") ;
@@ -723,8 +733,8 @@ int main(int argc, char **argv)
            if(end==NULL)  end=entry+strlen(entry) ;
               end++ ;
 
-           if(*entry=='-')  strcpy(entry, end) ;
-           else                    entry=end ;
+           if(*entry=='-')  memmove(entry, end, strlen(end)+1) ;
+           else                     entry=end ;
                                                }
 /*-------------------------------------------------------------------*/
 

@@ -37,9 +37,14 @@
 
 #endif
 
-#include "..\grabtp\http_tcp.h"
 
-#ifndef UNIX
+#ifdef UNIX
+
+#include "http_tcp.h"
+
+#else
+
+#include "..\grabtp\http_tcp.h"
 
 #include "controls.h"
 #include "resource.h"
@@ -94,6 +99,7 @@
     int  SMEVi_rkn_execute    (void) ;                            /* Исполнение запроса */	
    void  SMEVi_rkn_formrequest(char *) ;                          /* Формирование запроса */	
    void  SMEVi_rkn_formSOAP   (char *, char *, char *, char *) ;  /* Формирование SOAP-пакета */
+    int  SMEVi_rkn_xml2csv    (char *, char *, char *) ;          /* Преобразование XML-файла в CSV-файл */
 
 
 /*********************************************************************/
@@ -133,11 +139,11 @@
 #endif
 
                                          }
-/*---------------------------------------- Создание диалогового окна */
+/*--------------------------- Исполнение в режиме консольной команды */
    else
    if(!stricmp(action, "SILENT_MODE"  )) {
 
-                                 __silent_rc=SMEVi_rkn_execute() ;
+                      __silent_rc=SMEVi_rkn_execute() ;
 
                                          }
 /*-------------------------------------------------------------------*/
@@ -403,6 +409,7 @@
     char  timestamp_1[1024] ;  /* Время обновления по тэгу lastDumpDate */
     char  timestamp_2[1024] ;  /* Время обновления по тэгу lastDumpDateUrgently */
     char  result[1024] ;
+    char  result_code[1024] ;
     char  comment[1024] ;
     char  data_id[1024] ;
     char  text[1024] ;
@@ -568,6 +575,8 @@
                          strcpy(request, SOAP) ;
 
              SMEVi_rkn_formSOAP(SOAP, "REQUEST", request, sign) ;   /* Формирование SOAP-пакета */
+                      SMEV_show(SOAP) ;
+                       SMEV_log(SOAP) ;
 /*- - - - - - - - - - - - - - - - - - -  Отправка первичного запроса */
             strcpy(request, SOAP) ;                                 /* Сохраняем запрос */
 
@@ -710,6 +719,15 @@
                       sprintf(text, "resultComment: %s", comment) ;
                     SMEV_show(text) ;
 
+          entry=strstr(SOAP, "<resultCode>") ;
+       if(entry!=NULL) {
+                 strncpy(result_code, entry+strlen("<resultCode>"), sizeof(result_code)-1) ;
+            end = strchr(result_code, '<') ;
+         if(end!=NULL)  *end=0 ;
+                       }
+                          
+                      sprintf(text, "resultCode   : %s", result_code) ;
+                    SMEV_show(text) ;
 /*- - - - - - - - - - - - - - - - - - - - - - - - - Обработка ответа */
        if(!stricmp(result,  "true")) {
 
@@ -748,7 +766,7 @@
                                            break ;
                                      }
 
-       if( stricmp(comment, "запрос обрабатывается"))  break ;
+       if(stricmp(result_code, "0"))  break ;
 /*- - - - - - - - - - - - - - - - - - - - - -  Технологическая пауза */
               SMEV_show("Повторный запрос через 30 секунд...") ;
 
@@ -767,8 +785,6 @@
 
       } while(0) ;                                                  /* BLOCK */
 
-/*--------------------------------------------- Обработка  */
-
                  SMEV_show("\r\nОбмен завершен.") ;
 
 /*-------------------------------------------- Освобождение ресурсов */
@@ -776,6 +792,33 @@
                       free(request) ;
                       free(sign) ;
                       free(SOAP) ;
+
+/*------------------------------------------ Распаковка файла данных */
+
+                 SMEV_show("\r\nРаспаковка файла данных...") ;
+
+       status=system(__unzip_command) ;
+    if(status!=0 || errno!=0) {
+                 sprintf(text, "Unzip execute fail (status=%d, errno=%d) : %s", status, errno, __unzip_command) ;
+               SMEV_show(text) ;
+                SMEV_log(text) ;
+                  return(-1) ;
+                              }
+
+                 SMEV_show("Распаковка файла данных завершена") ;
+
+/*-------------------------------------- Преобразование файла данных */
+
+                 SMEV_show("\r\nПреобразование файла данных...") ;
+
+       status=SMEVi_rkn_xml2csv("dump.xml", "blacklist.csv", text) ;
+    if(status) {
+                  SMEV_show(text) ;
+                   SMEV_log(text) ;
+                      return(-1) ;
+              }
+
+                 SMEV_show("\r\nПреобразование файла данных завершено") ;
 
 /*-------------------------------------------------------------------*/
 
@@ -899,3 +942,173 @@
                                    }
 
 }
+
+
+/*********************************************************************/
+/*								     */
+/*               Преобразование XML-файла в CSV-файл                 */
+
+   int  SMEVi_rkn_xml2csv(char *xml_path, char *csv_path, char *error)
+
+{
+       FILE *xml_file ;
+       FILE *csv_file ;
+       char *buff ;
+       char *frame ;
+       char *record ;
+        int  cnt ;
+       char *entry ;
+       char *content ;
+       char *content_end ;
+       char *url ;
+       char *domain ;
+       char *ip ; 
+       char *end ;
+       char *c ;
+       long  content_cnt ;
+       long  ip_cnt ;
+       char  text[128] ;
+
+#define   _FRAME_SIZE  256000
+
+/*------------------------------------------------- Входной контроль */
+
+     if(xml_path[0]==0) {
+                     sprintf(error, "Не задано имя XML-файла") ;
+                           return(-1) ;
+                        }
+     if(csv_path[0]==0) {
+                     sprintf(error, "Не задано имя CSV-файла") ;
+                           return(-1) ;
+                        }
+/*-------------------------------------------------- Открытие файлов */
+
+        csv_file=fopen(csv_path, "wb") ;
+     if(csv_file==NULL) {
+                   sprintf(error, "Ошибка открытия SCV-файла %d :%s", errno, csv_path) ;
+                           return(-1) ;
+                        }
+        xml_file=fopen(xml_path, "rb") ;
+     if(xml_file==NULL) {
+                   sprintf(error, "Ошибка открытия XML-файла %d :%s", errno, xml_path) ;
+                           return(-1) ;
+                        }
+/*----------------------------------------- Преобразование XML-файла */
+
+         buff=(char *)calloc(1, 2*_FRAME_SIZE) ;
+        frame=(char *)calloc(1,   _FRAME_SIZE) ;
+       record=(char *)calloc(1,   _FRAME_SIZE) ;
+
+                 *error=0 ;
+
+            content_cnt=0 ; 
+                 ip_cnt=0 ; 
+
+    do {
+/*- - - - - - - - - - - - - - - - - - -  Считывание следующего кадра */
+            memset(frame, 0, _FRAME_SIZE) ;
+         cnt=fread(frame, 1, _FRAME_SIZE-1, xml_file) ;
+
+            strcat(buff, frame) ;
+/*- - - - - - - - - - - - - - - - - - - - - - - - -  Обработка кадра */
+        for(content=buff ; ; content=content_end+1) {
+
+                 *record=  0 ;
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег CONTENT */
+             content_end=NULL ;
+
+            entry=strstr(content, "<content") ;
+         if(entry==NULL)  break ;
+
+            content    =entry ;
+            content_end=strstr(content, "</content>") ;
+         if(content_end==NULL)  break ;
+
+           *content_end=0 ;
+
+            content_cnt++ ; 
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег URL */
+            url=strstr(content, "<url") ;
+         if(url!=NULL) {
+                          url =strstr(url, "![CDATA[")+strlen("![CDATA[") ;
+                          end =strchr(url, ']') ;
+                         *end = 0 ;
+                    strcat(record, url) ;
+                    strcat(record, ";") ;
+                         *end =' ' ;
+                       }
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - Тег DOMAIN */
+            domain=strstr(content, "<domain") ;
+         if(domain==NULL) {
+                             strcat(record, ";;") ;
+                          }
+         else             {
+
+            domain =strstr(domain, "![CDATA[")+strlen("![CDATA[") ;
+               end =strchr(domain, ']') ;
+              *end = 0 ;
+
+           if(url==NULL) {
+                             strcat(record, domain) ;
+                             strcat(record, ";") ;
+                         }
+
+                             strcat(record, domain) ;
+                             strcat(record, ";") ;
+                          }
+
+                         *end =' ' ;
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - Тег IP */
+     while(1) {
+                  
+            ip=strstr(content, "<ip") ;
+         if(ip==NULL)  break ;
+
+           *ip =' ' ;
+            ip =strchr(ip, '>')+1 ;
+           end =strchr(ip, '<') ;
+          *end = 0 ;
+
+         for(c=ip ; *c ; c++) if(*c==',')  *c='.' ;
+
+                 strcat(record, ip) ;
+                 strcat(record, ";") ;
+
+                     *end=' ' ;
+                   ip_cnt++ ; 
+              }
+
+                 strcat(record, "\n") ;
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - Запись CSV */
+            fwrite(record, 1, strlen(record), csv_file) ;
+/*- - - - - - - - - - - - - - - - - - - - - - - - -  Обработка кадра */
+                                                    }
+
+              if(*error!=0)  break ;
+
+              if(content_end!=NULL)  memmove(buff, content_end, strlen(content_end)+1) ;
+         else if(content    !=buff)  memmove(buff, content,     strlen(content    )+1) ;
+/*- - - - - - - - - - - - - - - - - - -  Считывание следующего кадра */
+       } while(cnt>0) ;
+
+              free(record) ;
+              free(frame) ;
+              free(buff) ;
+
+/*-------------------------------------------------- Закрытие файлов */
+
+                    fclose(xml_file) ;
+                    fclose(csv_file) ;
+
+/*-------------------------------------------------------------------*/
+
+         sprintf(text, "Processed: %ld records, %ld ip", content_cnt, ip_cnt) ;
+       SMEV_show(text) ;
+        SMEV_log(text) ;
+
+  if(*error!=0)  return(-1) ;
+
+    return(0) ;
+}
+
+

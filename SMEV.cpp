@@ -1144,8 +1144,8 @@ int APIENTRY WinMain(HINSTANCE hInstance,
            if(end==NULL)  end=entry+strlen(entry) ;
               end++ ;
 
-           if(*entry=='-')  strcpy(entry, end) ;
-           else                    entry=end ;
+           if(*entry=='-')  memmove(entry, end, strlen(end)+1) ;
+           else                     entry=end ;
                                                }
 /*-------------------------------------------------------------------*/
 
