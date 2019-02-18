@@ -27,7 +27,7 @@
 
 /*********************************************************************/
 /*                                                                   */
-/*	                      MAIN                     	         */	
+/*	                      MAIN                     	             */	
 /*                                                                   */
 /*    Ключи командной строки:                                        */
 /*                                                                   */
@@ -240,7 +240,6 @@ int main(int argc, char **argv)
    char *entry ;
    char *end ;
    char  row[256] ;
-    int  cnt ;
 
 
     for(entry=text ; *entry!=0 ; entry+=strlen(row)) {
@@ -750,7 +749,10 @@ int main(int argc, char **argv)
   void  SMEV_toUTF8(char *data, char *work)
 
 {
+#ifndef UNIX
    int  cnt ;
+#endif
+
 
 #ifdef UNIX
 
@@ -767,7 +769,10 @@ int main(int argc, char **argv)
   void  SMEV_fromUTF8(char *data, char *work)
 
 {
+#ifndef UNIX
    int  cnt ;
+#endif
+
 
 #ifdef UNIX
 

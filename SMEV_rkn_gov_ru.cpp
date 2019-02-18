@@ -99,7 +99,8 @@
     int  SMEVi_rkn_execute    (void) ;                            /* Исполнение запроса */	
    void  SMEVi_rkn_formrequest(char *) ;                          /* Формирование запроса */	
    void  SMEVi_rkn_formSOAP   (char *, char *, char *, char *) ;  /* Формирование SOAP-пакета */
-    int  SMEVi_rkn_xml2csv    (char *, char *, char *) ;          /* Преобразование XML-файла в CSV-файл */
+    int  SMEVi_rkn_xml2csv    (char *, char *, char *, char *,    /* Преобразование XML-файла в CSV-файл */
+                               char *, char *, char *, char * ) ;
 
 
 /*********************************************************************/
@@ -116,7 +117,9 @@
 
    int  SMEV_rkn_exchange(char *action)
 {
+#ifndef UNIX
    char  text[1024] ;
+#endif
 
 /*------------------------------------------------- Входной контроль */
 
@@ -811,7 +814,7 @@
 
                  SMEV_show("\r\nПреобразование файла данных...") ;
 
-       status=SMEVi_rkn_xml2csv("dump.xml", "blacklist.csv", text) ;
+       status=SMEVi_rkn_xml2csv("dump.xml", "black_http.csv", "black_https.csv", "black_cyr.csv", "black_ip4.csv", "black_ip4_rng.csv", "black_ip6.csv", text) ;
     if(status) {
                   SMEV_show(text) ;
                    SMEV_log(text) ;
@@ -825,7 +828,7 @@
 #undef  _SMALL_BUFF_SIZE
 #undef  _LARGE_BUFF_SIZE
 
-  return(status) ;
+  return(rc) ;
 }
 
 
@@ -948,11 +951,16 @@
 /*								     */
 /*               Преобразование XML-файла в CSV-файл                 */
 
-   int  SMEVi_rkn_xml2csv(char *xml_path, char *csv_path, char *error)
+   int  SMEVi_rkn_xml2csv(char *xml_path, char *www_path, char *ssl_path, char *cyr_path, char *ip4_path, char *rn4_path, char *ip6_path, char *error)
 
 {
        FILE *xml_file ;
-       FILE *csv_file ;
+       FILE *www_file ;
+       FILE *ssl_file ;
+       FILE *cyr_file ;
+       FILE *ip4_file ;
+       FILE *rn4_file ;
+       FILE *ip6_file ;
        char *buff ;
        char *frame ;
        char *record ;
@@ -966,7 +974,12 @@
        char *end ;
        char *c ;
        long  content_cnt ;
-       long  ip_cnt ;
+       long  www_cnt ;
+       long  ssl_cnt ;
+       long  cyr_cnt ;
+       long  ip4_cnt ;
+       long  rn4_cnt ;
+       long  ip6_cnt ;
        char  text[1024] ;
 
 #define   _FRAME_SIZE  256000
@@ -977,17 +990,68 @@
                      sprintf(error, "Не задано имя XML-файла") ;
                            return(-1) ;
                         }
-     if(csv_path[0]==0) {
-                     sprintf(error, "Не задано имя CSV-файла") ;
+     if(www_path[0]==0) {
+                     sprintf(error, "Не задано имя HTTP-файла") ;
+                           return(-1) ;
+                        }
+     if(ssl_path[0]==0) {
+                     sprintf(error, "Не задано имя HTTPS-файла") ;
+                           return(-1) ;
+                        }
+     if(cyr_path[0]==0) {
+                     sprintf(error, "Не задано имя CYR-файла") ;
+                           return(-1) ;
+                        }
+     if(ip4_path[0]==0) {
+                     sprintf(error, "Не задано имя IPv4-файла") ;
+                           return(-1) ;
+                        }
+     if(rn4_path[0]==0) {
+                     sprintf(error, "Не задано имя IPv4-Range-файла") ;
+                           return(-1) ;
+                        }
+     if(ip6_path[0]==0) {
+                     sprintf(error, "Не задано имя IPv6-файла") ;
                            return(-1) ;
                         }
 /*-------------------------------------------------- Открытие файлов */
 
-        csv_file=fopen(csv_path, "wb") ;
-     if(csv_file==NULL) {
-                   sprintf(error, "Ошибка открытия SCV-файла %d :%s", errno, csv_path) ;
+        www_file=fopen(www_path, "wb") ;
+     if(www_file==NULL) {
+                   sprintf(error, "Ошибка открытия HTTP-файла %d :%s", errno, www_path) ;
                            return(-1) ;
                         }
+
+        ssl_file=fopen(ssl_path, "wb") ;
+     if(ssl_file==NULL) {
+                   sprintf(error, "Ошибка открытия HTTPS-файла %d :%s", errno, ssl_path) ;
+                           return(-1) ;
+                        }
+
+        cyr_file=fopen(cyr_path, "wb") ;
+     if(cyr_file==NULL) {
+                   sprintf(error, "Ошибка открытия CYR-файла %d :%s", errno, cyr_path) ;
+                           return(-1) ;
+                        }
+
+        ip4_file=fopen(ip4_path, "wb") ;
+     if(ip4_file==NULL) {
+                   sprintf(error, "Ошибка открытия IPv4-файла %d :%s", errno, ip4_path) ;
+                           return(-1) ;
+                        }
+
+        rn4_file=fopen(rn4_path, "wb") ;
+     if(rn4_file==NULL) {
+                   sprintf(error, "Ошибка открытия IPv4-файла %d :%s", errno, rn4_path) ;
+                           return(-1) ;
+                        }
+
+        ip6_file=fopen(ip6_path, "wb") ;
+     if(ip6_file==NULL) {
+                   sprintf(error, "Ошибка открытия IPv6-файла %d :%s", errno, ip6_path) ;
+                           return(-1) ;
+                        }
+
         xml_file=fopen(xml_path, "rb") ;
      if(xml_file==NULL) {
                    sprintf(error, "Ошибка открытия XML-файла %d :%s", errno, xml_path) ;
@@ -1002,7 +1066,11 @@
                  *error=0 ;
 
             content_cnt=0 ; 
-                 ip_cnt=0 ; 
+                www_cnt=0 ; 
+                ssl_cnt=0 ; 
+                ip4_cnt=0 ; 
+                rn4_cnt=0 ; 
+                ip6_cnt=0 ; 
 
     do {
 /*- - - - - - - - - - - - - - - - - - -  Считывание следующего кадра */
@@ -1027,37 +1095,65 @@
            *content_end=0 ;
 
             content_cnt++ ; 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег URL */
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег URL */   
             url=strstr(content, "<url") ;
          if(url!=NULL) {
                           url =strstr(url, "![CDATA[")+strlen("![CDATA[") ;
                           end =strchr(url, ']') ;
                          *end = 0 ;
-                    strcat(record, url) ;
-                    strcat(record, ";") ;
-                         *end =' ' ;
+
+            for(c=url ; *c ; c++) if(*c<0 || *c>127)  break ;
+
+         if(*c==0) {
+
+           if(strstr(url, "https:")!=NULL) {
+                     fwrite( url, 1, strlen( url), ssl_file) ;
+                     fwrite("\n", 1, strlen("\n"), ssl_file) ;
+                            ssl_cnt++ ; 
+                                           }
+           else                            {
+                     fwrite( url, 1, strlen( url), www_file) ;
+                     fwrite("\n", 1, strlen("\n"), www_file) ;
+                            www_cnt++ ; 
+                                           }
+
+                             continue ;
+                   }
+         else      {
+                     fwrite( url, 1, strlen( url), cyr_file) ;
+                     fwrite("\n", 1, strlen("\n"), cyr_file) ;
+                            cyr_cnt++ ; 
+                            *end =' ' ;
+                   }
+
                        }
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - Тег DOMAIN */
+     if(url==NULL) {
+
             domain=strstr(content, "<domain") ;
-         if(domain==NULL) {
-                             strcat(record, ";;") ;
-                          }
-         else             {
+         if(domain!=NULL) {
 
             domain =strstr(domain, "![CDATA[")+strlen("![CDATA[") ;
                end =strchr(domain, ']') ;
               *end = 0 ;
 
-           if(url==NULL) {
-                             strcat(record, domain) ;
-                             strcat(record, ";") ;
+            for(c=domain ; *c ; c++) if(*c<0 || *c>127)  break ;
+
+         if(*c==0) {
+                     fwrite(domain, 1, strlen(domain), www_file) ;
+                     fwrite(  "\n", 1, strlen(  "\n"), www_file) ;
+                            www_cnt++ ; 
+                             continue ;
+                   }
+         else      {
+                     fwrite(domain, 1, strlen(domain), cyr_file) ;
+                     fwrite(  "\n", 1, strlen(  "\n"), cyr_file) ;
+                            cyr_cnt++ ; 
+                            *end =' ' ;
+                   }
+
                          }
-
-                             strcat(record, domain) ;
-                             strcat(record, ";") ;
-                          }
-
-                         *end =' ' ;
+                   }
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - Тег IP */
      while(1) {
                   
@@ -1069,13 +1165,27 @@
            end =strchr(ip, '<') ;
           *end = 0 ;
 
-         for(c=ip ; *c ; c++) if(*c==',')  *c='.' ;
+            for(c=ip ; *c ; c++) if(*c==',')  *c='.' ;
 
-           sprintf(text, "%s%s\n", record, ip) ;
-            fwrite(text, 1, strlen(text), csv_file) ;
+        if(strchr(ip, ':')!=NULL) {
+                   fwrite( ip , 1, strlen( ip ), ip6_file) ;
+                   fwrite("\n", 1, strlen("\n"), ip6_file) ;
+                            ip6_cnt++ ; 
+                                  }
+        else                      {
 
-                     *end=' ' ;
-                   ip_cnt++ ; 
+             if(strchr(ip, '/')!=NULL) {
+                   fwrite( ip , 1, strlen( ip ), rn4_file) ;
+                   fwrite("\n", 1, strlen("\n"), rn4_file) ;
+                            rn4_cnt++ ; 
+                                       } 
+             else                      { 
+                   fwrite( ip , 1, strlen( ip ), ip4_file) ;
+                   fwrite("\n", 1, strlen("\n"), ip4_file) ;
+                            ip4_cnt++ ; 
+                                       }
+                                  }
+
               }
 /*- - - - - - - - - - - - - - - - - - - - - - - - -  Обработка кадра */
                                                     }
@@ -1094,11 +1204,17 @@
 /*-------------------------------------------------- Закрытие файлов */
 
                     fclose(xml_file) ;
-                    fclose(csv_file) ;
+                    fclose(www_file) ;
+                    fclose(ssl_file) ;
+                    fclose(cyr_file) ;
+                    fclose(ip4_file) ;
+                    fclose(rn4_file) ;
+                    fclose(ip6_file) ;
 
 /*-------------------------------------------------------------------*/
 
-         sprintf(text, "Processed: %ld records, %ld ip", content_cnt, ip_cnt) ;
+         sprintf(text, "Processed %ld records: %ld www, %ld ssl, %ld cyr, %ld ip4, %ld ip4 range, %ld ip6",
+                                         content_cnt, www_cnt, ssl_cnt, cyr_cnt, ip4_cnt, rn4_cnt, ip6_cnt) ;
        SMEV_show(text) ;
         SMEV_log(text) ;
 
