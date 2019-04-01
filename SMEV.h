@@ -28,7 +28,7 @@
 
 #define   _PROGRAM_TITLE   "SMEV"
 
-#define   _VERSION   "07.12.2018"
+#define   _VERSION   "22.03.2019"
 #define   _WINDOW_TITLE       "Обмен с сервисами SMEV"
 
 /*--------------------------------------------------- Система команд */

@@ -99,8 +99,10 @@
     int  SMEVi_rkn_execute    (void) ;                            /* Исполнение запроса */	
    void  SMEVi_rkn_formrequest(char *) ;                          /* Формирование запроса */	
    void  SMEVi_rkn_formSOAP   (char *, char *, char *, char *) ;  /* Формирование SOAP-пакета */
-    int  SMEVi_rkn_xml2csv    (char *, char *, char *, char *,    /* Преобразование XML-файла в CSV-файл */
-                               char *, char *, char *, char * ) ;
+    int  SMEVi_rkn_xml2csv    (char *, char *, char *,            /* Преобразование XML-файла в CSV-файл */
+                               char *, char *, char *,
+                               char *, char *, char *,
+                               char *, char *         ) ;
 
 
 /*********************************************************************/
@@ -814,7 +816,10 @@
 
                  SMEV_show("\r\nПреобразование файла данных...") ;
 
-       status=SMEVi_rkn_xml2csv("dump.xml", "black_http.csv", "black_https.csv", "black_cyr.csv", "black_ip4.csv", "black_ip4_rng.csv", "black_ip6.csv", text) ;
+       status=SMEVi_rkn_xml2csv("dump.xml", "black_http.csv",      "black_https.csv", 
+                                            "black_cyr_http.csv",  "black_cyr_https.csv", 
+                                            "black_utf_http.csv", "black_utf_https.csv",
+                                            "black_ip4.csv", "black_ip4_rng.csv", "black_ip6.csv", text) ;
     if(status) {
                   SMEV_show(text) ;
                    SMEV_log(text) ;
@@ -951,13 +956,19 @@
 /*								     */
 /*               Преобразование XML-файла в CSV-файл                 */
 
-   int  SMEVi_rkn_xml2csv(char *xml_path, char *www_path, char *ssl_path, char *cyr_path, char *ip4_path, char *rn4_path, char *ip6_path, char *error)
+   int  SMEVi_rkn_xml2csv(char *xml_path, char *www_path, char *ssl_path, 
+                                          char *cyr_path, char *cys_path, 
+                                          char *u8w_path, char *u8s_path, 
+                                          char *ip4_path, char *rn4_path, char *ip6_path, char *error)
 
 {
        FILE *xml_file ;
        FILE *www_file ;
        FILE *ssl_file ;
        FILE *cyr_file ;
+       FILE *cys_file ;
+       FILE *u8w_file ;
+       FILE *u8s_file ;
        FILE *ip4_file ;
        FILE *rn4_file ;
        FILE *ip6_file ;
@@ -973,14 +984,20 @@
        char *ip ; 
        char *end ;
        char *c ;
+       char *last ;
+        int  cut ;
        long  content_cnt ;
        long  www_cnt ;
        long  ssl_cnt ;
        long  cyr_cnt ;
+       long  cys_cnt ;
+       long  u8w_cnt ;
+       long  u8s_cnt ;
        long  ip4_cnt ;
        long  rn4_cnt ;
        long  ip6_cnt ;
        char  text[1024] ;
+       char  url_prv[1024] ;
 
 #define   _FRAME_SIZE  256000
 
@@ -999,7 +1016,19 @@
                            return(-1) ;
                         }
      if(cyr_path[0]==0) {
-                     sprintf(error, "Не задано имя CYR-файла") ;
+                     sprintf(error, "Не задано имя CYR-HTTP-файла") ;
+                           return(-1) ;
+                        }
+     if(cys_path[0]==0) {
+                     sprintf(error, "Не задано имя CYR-HTTPS-файла") ;
+                           return(-1) ;
+                        }
+     if(u8w_path[0]==0) {
+                     sprintf(error, "Не задано имя UTF8-HTTP-файла") ;
+                           return(-1) ;
+                        }
+     if(u8s_path[0]==0) {
+                     sprintf(error, "Не задано имя UTF8-HTTPS-файла") ;
                            return(-1) ;
                         }
      if(ip4_path[0]==0) {
@@ -1030,7 +1059,25 @@
 
         cyr_file=fopen(cyr_path, "wb") ;
      if(cyr_file==NULL) {
-                   sprintf(error, "Ошибка открытия CYR-файла %d :%s", errno, cyr_path) ;
+                   sprintf(error, "Ошибка открытия CYR-HTTP-файла %d :%s", errno, cyr_path) ;
+                           return(-1) ;
+                        }
+
+        cys_file=fopen(cys_path, "wb") ;
+     if(cys_file==NULL) {
+                   sprintf(error, "Ошибка открытия CYR-HTTPS-файла %d :%s", errno, cys_path) ;
+                           return(-1) ;
+                        }
+
+        u8w_file=fopen(u8w_path, "wb") ;
+     if(u8w_file==NULL) {
+                   sprintf(error, "Ошибка открытия UTF8-HTTP-файла %d :%s", errno, u8w_path) ;
+                           return(-1) ;
+                        }
+
+        u8s_file=fopen(u8s_path, "wb") ;
+     if(u8s_file==NULL) {
+                   sprintf(error, "Ошибка открытия UTF8-HTTPS-файла %d :%s", errno, u8s_path) ;
                            return(-1) ;
                         }
 
@@ -1068,9 +1115,15 @@
             content_cnt=0 ; 
                 www_cnt=0 ; 
                 ssl_cnt=0 ; 
+                cyr_cnt=0 ;
+                cys_cnt=0 ;
+                u8w_cnt=0 ;
+                u8s_cnt=0 ;
                 ip4_cnt=0 ; 
                 rn4_cnt=0 ; 
                 ip6_cnt=0 ; 
+
+            memset(url_prv, 0, sizeof(url_prv)) ;
 
     do {
 /*- - - - - - - - - - - - - - - - - - -  Считывание следующего кадра */
@@ -1080,8 +1133,6 @@
             strcat(buff, frame) ;
 /*- - - - - - - - - - - - - - - - - - - - - - - - -  Обработка кадра */
         for(content=buff ; ; content=content_end+1) {
-
-                 *record=  0 ;
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег CONTENT */
              content_end=NULL ;
 
@@ -1095,16 +1146,56 @@
            *content_end=0 ;
 
             content_cnt++ ; 
-/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег URL */   
-            url=strstr(content, "<url") ;
-         if(url!=NULL) {
+/*- - - - - - - - - - - - - - - - - - - - - - - - - - - - -  Тег URL */
+                strcpy(record, content) ; 
+            url=strstr(record, "<url") ;
+      while(url!=NULL) {
                           url =strstr(url, "![CDATA[")+strlen("![CDATA[") ;
                           end =strchr(url, ']') ;
                          *end = 0 ;
 
-            for(c=url ; *c ; c++) if(*c<0 || *c>127)  break ;
+              if(!memcmp(url, "http://", 7))  url=url+7 ;
 
-         if(*c==0) {
+              if(url[0]=='*' &&                                     /* Обработка префиксной маски */
+                 url[1]=='.'   ) {  url[0]='.' ;  url[1]='*' ;  }
+
+            for(c=url, last=NULL, cut=0 ; *c ; c++) {               /* Обработка спец-символов */
+              if(*c=='\\')     *c='/' ;
+              if(*c=='/' )   last= c ;
+              if(*c=='?' ) {   *c= 0 ;  break ;  }
+              if(*c=='[' ) {  cut= 1 ;  break ;  }
+              if(*c=='(' ) {  cut= 1 ;  break ;  }
+              if(*c=='{' ) {  cut= 1 ;  break ;  }
+              if(*c=='}' ) {  cut= 1 ;  break ;  }
+              if(*c=='%' ) {  cut= 1 ;  break ;  }
+                                                    }
+
+         if(*c=='%') {                                              /* Сохранение URL в UTF-кодировке */
+
+           if(strstr(url, "https:")!=NULL) {
+                     fwrite( url, 1, strlen( url), u8s_file) ;
+                     fwrite("\n", 1, strlen("\n"), u8s_file) ;
+                            u8s_cnt++ ; 
+                                           }
+           else                            {
+                     fwrite( url, 1, strlen( url), u8w_file) ;
+                     fwrite("\n", 1, strlen("\n"), u8w_file) ;
+                            u8w_cnt++ ; 
+                                           }
+                    }
+
+         if(last!=NULL) {                                           /* Усечка хвоста при наличии спец-символов */
+                  if( cut   ==1)  strcpy(last, "\\.*") ; 
+                  if(last[1]==0)        *last=0 ;                
+                        }
+
+            for(c=url ; *c ; c++)                                   /* Поиск символов кириллицы */
+               if(*c<0 || *c>127)  break ;
+
+         if(!strcmp(url_prv, url))  break ;
+             strcpy(url_prv, url) ;
+
+         if(*c== 0 ) {
 
            if(strstr(url, "https:")!=NULL) {
                      fwrite( url, 1, strlen( url), ssl_file) ;
@@ -1116,48 +1207,60 @@
                      fwrite("\n", 1, strlen("\n"), www_file) ;
                             www_cnt++ ; 
                                            }
+                     }
+         else        {
 
-                             continue ;
-                   }
-         else      {
+           if(strstr(url, "https:")!=NULL) {
+                     fwrite( url, 1, strlen( url), cys_file) ;
+                     fwrite("\n", 1, strlen("\n"), cys_file) ;
+                            cys_cnt++ ; 
+                                           }
+           else                            {
                      fwrite( url, 1, strlen( url), cyr_file) ;
                      fwrite("\n", 1, strlen("\n"), cyr_file) ;
                             cyr_cnt++ ; 
-                            *end =' ' ;
-                   }
+                                           }
+                     }
 
+                             break ;
                        }
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - Тег DOMAIN */
-     if(url==NULL) {
-
-            domain=strstr(content, "<domain") ;
+       if(url==NULL) {
+ 
+                   strcpy(record, content) ; 
+            domain=strstr(record, "<domain") ;
          if(domain!=NULL) {
 
             domain =strstr(domain, "![CDATA[")+strlen("![CDATA[") ;
                end =strchr(domain, ']') ;
               *end = 0 ;
 
-            for(c=domain ; *c ; c++) if(*c<0 || *c>127)  break ;
+              if(domain[0]=='*' &&                                  /* Обработка префиксной маски */
+                 domain[1]=='.'   ) {  domain[0]='.' ;  domain[1]='*' ;  }
+
+            for(c=domain ; *c ; c++)                                /* Поиск символов кириллицы */
+               if(*c<0 || *c>127)  break ;
 
          if(*c==0) {
                      fwrite(domain, 1, strlen(domain), www_file) ;
                      fwrite(  "\n", 1, strlen(  "\n"), www_file) ;
                             www_cnt++ ; 
-                             continue ;
                    }
          else      {
                      fwrite(domain, 1, strlen(domain), cyr_file) ;
                      fwrite(  "\n", 1, strlen(  "\n"), cyr_file) ;
                             cyr_cnt++ ; 
-                            *end =' ' ;
                    }
 
                          }
-                   }
+
+                     }
 /*- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - Тег IP */
+                   strcpy(record, content) ; 
+
      while(1) {
                   
-            ip=strstr(content, "<ip") ;
+            ip=strstr(record, "<ip") ;
          if(ip==NULL)  break ;
 
            *ip =' ' ;
@@ -1207,14 +1310,15 @@
                     fclose(www_file) ;
                     fclose(ssl_file) ;
                     fclose(cyr_file) ;
+                    fclose(cys_file) ;
                     fclose(ip4_file) ;
                     fclose(rn4_file) ;
                     fclose(ip6_file) ;
 
 /*-------------------------------------------------------------------*/
 
-         sprintf(text, "Processed %ld records: %ld www, %ld ssl, %ld cyr, %ld ip4, %ld ip4 range, %ld ip6",
-                                         content_cnt, www_cnt, ssl_cnt, cyr_cnt, ip4_cnt, rn4_cnt, ip6_cnt) ;
+         sprintf(text, "Processed %ld records: %ld www, %ld ssl, %ld cyr, %ld cys, %ld u8w, %ld u8s, %ld ip4, %ld ip4 range, %ld ip6",
+                                         content_cnt, www_cnt, ssl_cnt, cyr_cnt, cys_cnt, u8w_cnt, u8s_cnt, ip4_cnt, rn4_cnt, ip6_cnt) ;
        SMEV_show(text) ;
         SMEV_log(text) ;
 
